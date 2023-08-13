@@ -1,0 +1,755 @@
+---
+title: "Nestle analiza pretest"
+author: "Aleksandar"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+<!--- 
+
+Prvo aktiviraj sve pakete--->
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(readxl)
+library(dplyr)
+library(xlsx)
+library(janitor)
+library(rstatix)
+library(gtsummary)
+library(ggplot2)
+library(scales)
+library(extrafont)
+library(stats)
+library(flextable)
+```
+
+<!--- 
+Ucitaj podatke--->
+
+```{r include=FALSE}
+pretest <- read_excel("data/2022izvodbora_samo_sedmi.xlsx", sheet = "1")
+```
+
+<!--- 
+Ucitaj fontove--->
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+## Ovaj se kod izvršava samo ako nije prisutan kalibri forn
+font_import(prompt = FALSE, pattern = "calibri")
+loadfonts(device = "win")
+```
+
+Prva tabela koja se pravi jeste broj đaka koji su učestvovali po školama. Ona se čuva u ekselu.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+tabela1_broj_ucenika_po_skolama <- pretest |> 
+  group_by(okrug, Skola) |> 
+  summarise(broj = n())
+
+write.xlsx(as.data.frame(tabela1_broj_ucenika_po_skolama), file="output/izlazniPodaci.xlsx", sheetName="tabela1", append = FALSE)
+```
+
+## Koliko je ukupno bilo učesnik u istraživanju i kojeg su bili pola.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pretest$pol <- factor(pretest$na1_1_pol_id,
+                      levels = c(
+                        '10101', 
+                        '10102'), 
+                      labels = c(
+                        'Muški', 
+                        'Ženski')) 
+
+pretest |> 
+  tabyl(pol) |> 
+  adorn_pct_formatting() 
+```
+
+# Pitanje broj 1. Broj obroka
+
+### Koji je broj učesnika prema broju obroka svakog dana.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pretest$broj_obroka <- factor(pretest$na1_12_obroci_tokom_dana_id,
+                              levels = c(
+                                '11201', 
+                                '11202',
+                                '11203',
+                                '11204',
+                                '11205',
+                                '11206'), 
+                              labels = c(
+                                'Jedan',
+                                'Dva',
+                                'Tri',
+                                'Četiri',
+                                'Pet',
+                                'Stalno nešto jedem, \n ne jedem u obrocima'
+                              )) 
+
+broj_obroka_racunanje <- pretest |> 
+  tibble(x = broj_obroka) %>%
+  count(x)
+
+broj_obroka_racunanje <-
+  mutate(broj_obroka_racunanje, p = n / sum(n), # percentage
+         p = scales::label_percent(accuracy = 1)(p), # format nicely
+         lab = paste(n, p, sep = "\n")) # combine into label
+
+ggplot(broj_obroka_racunanje, aes(x, n)) +
+  geom_col() +
+  geom_text(aes(label = if_else(n > 0, lab, "")), # only create label if n > 0 
+            vjust = -0.2, # "bottom align" to put on top of bar
+            nudge_y = 0) + # nudge to create distance
+  scale_y_continuous(limits = c(0,1800))+ # ensure label can be seen
+  theme_classic(base_family = "Calibri")+
+  xlab("Broj obroka tokom dana") + ylab("Broj đaka i učestalost obroka tokom dana")
+
+
+
+```
+
+### Koliko je učesnika je imalo pet obroka dnevno po polu.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pretest <- pretest |> 
+  mutate(pet_obroka = case_when(
+    broj_obroka == "Pet" ~ "Pet_obroka",
+    TRUE ~ 'Razlicto_od_pet_obroka'
+  ))
+
+pretest |> 
+  tabyl(pet_obroka, pol) |> 
+  adorn_totals(where = "row") %>%             # add a total row
+  adorn_percentages(denominator = "col") %>%  # convert to proportions
+  adorn_pct_formatting() %>%                  # convert to percents
+  adorn_ns(position = "front")
+
+chisq.test(pretest$pet_obroka,pretest$pol)
+```
+
+### Koliko je učesnika je imalo pet obroka dnevno po okrugu
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+pretest |> 
+  tabyl(okrug, pet_obroka) |> 
+  adorn_totals(where = "row") |> # add a total row
+  adorn_percentages(denominator = "row") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front") |> 
+  flextable::flextable() %>%    # convert to pretty image
+  flextable::autofit()  
+
+chisq.test(pretest$pet_obroka,pretest$okrug)
+```
+
+# Pitanje broj 2. Koliko puta doručkuju
+
+### Koliko puta doručkuju
+
+```{r echo=FALSE}
+pretest$dorucak <- factor(pretest$na1_13_puta_doruckujes_id,
+                              levels = c(
+                                '11301', 
+                                '11302',
+                                '11303'), 
+                              labels = c(
+                                'Svaki dan',
+                                'Ponekad',
+                                'Nikad'
+                              ))
+
+pretest |> 
+  tabyl(dorucak) |> 
+  adorn_pct_formatting(digits = 0) |> 
+  adorn_totals(where = "row") 
+
+
+pretest <- pretest |> 
+  mutate(dorucak_svaki_dan = case_when(
+    dorucak == "Svaki dan" ~ "Svaki dan",
+    TRUE ~ 'Ne doruckuju svakog dana'
+  ))
+
+```
+
+### Doručak svakog dana u odnosu na pol
+
+```{r echo=FALSE}
+pretest |> 
+  tabyl(dorucak_svaki_dan, pol) |> 
+  adorn_totals(where = "row") %>%             # add a total row
+  adorn_percentages(denominator = "col") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front")
+
+chisq.test(pretest$dorucak_svaki_dan,pretest$pol)
+```
+
+### Doručak svakog dana u odnosu na region
+
+```{r echo=FALSE}
+
+pretest |> 
+  tabyl(okrug, dorucak_svaki_dan) |> 
+  adorn_totals(where = "row") |> # add a total row
+  adorn_percentages(denominator = "row") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front") |> 
+  flextable::flextable() %>%    # convert to pretty image
+  flextable::autofit()  
+
+chisq.test(pretest$dorucak_svaki_dan,pretest$okrug)
+
+```
+
+# Pitanje broj 3. Koliko puta jedu voće 
+
+### Koliko puta jedu voće
+
+```{r echo=FALSE}
+pretest$voce <- factor(pretest$na1_14_voce_id,
+                              levels = c(
+                                '11401', 
+                                '11402',
+                                '11403',
+                                '11404',
+                                '11405'), 
+                              labels = c(
+                                'Svakog dana, dva ili više puta dnevno',
+                                'Svakog dana, jednom dnevno',
+                                'Nekoliko puta nedeljno',
+                                'Jednom nedeljno ili ređe',
+                                'Nikad'
+                              ))
+
+pretest |> 
+  tabyl(voce) |> 
+  adorn_pct_formatting(digits = 0) |> 
+  adorn_totals(where = "row") 
+
+
+pretest <- pretest |> 
+  mutate(voce_svaki_dan = case_when(
+    voce == "Svakog dana, dva ili više puta dnevno" ~ "Svaki dan voće",
+    voce == "Svakog dana, jednom dnevno" ~ "Svaki dan voće",
+    TRUE ~ 'Ne jedu voce svakog dana'
+  ))
+
+```
+
+### Voće svakog dana u odnosu na pol
+
+```{r echo=FALSE}
+pretest |> 
+  tabyl(voce_svaki_dan, pol) |> 
+  adorn_totals(where = "row") %>%             # add a total row
+  adorn_percentages(denominator = "col") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front")
+
+chisq.test(pretest$voce_svaki_dan, pretest$pol)
+```
+
+### Voće svakog dana u odnosu na region
+
+```{r echo=FALSE}
+
+pretest |> 
+  tabyl(okrug, voce_svaki_dan) |> 
+  adorn_totals(where = "row") |> # add a total row
+  adorn_percentages(denominator = "row") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front") |> 
+  flextable::flextable() %>%    # convert to pretty image
+  flextable::autofit()  
+
+chisq.test(pretest$voce_svaki_dan,pretest$okrug)
+
+```
+
+# Pitanje broj 4. Koliko puta jedu povrće? 
+
+### Koliko puta jedu povrće
+
+```{r echo=FALSE}
+pretest$povrce <- factor(pretest$na1_15_povrce_id,
+                              levels = c(
+                                '11501', 
+                                '11502',
+                                '11503',
+                                '11504',
+                                '11505'), 
+                              labels = c(
+                                'Svakog dana, dva ili više puta dnevno',
+                                'Svakog dana, jednom dnevno',
+                                'Nekoliko puta nedeljno',
+                                'Jednom nedeljno ili ređe',
+                                'Nikad'
+                              ))
+
+pretest |> 
+  tabyl(povrce) |> 
+  adorn_pct_formatting(digits = 0) |> 
+  adorn_totals(where = "row") 
+
+
+pretest <- pretest |> 
+  mutate(povrce_svaki_dan = case_when(
+    povrce == "Svakog dana, dva ili više puta dnevno" ~ "Svaki dan povrće",
+    povrce == "Svakog dana, jednom dnevno" ~ "Svaki dan povrće",
+    TRUE ~ 'Ne jedu povrće svakog dana'
+  ))
+
+```
+
+### Povrće svakog dana u odnosu na pol
+
+```{r echo=FALSE}
+pretest |> 
+  tabyl(povrce_svaki_dan, pol) |> 
+  adorn_totals(where = "row") %>%             # add a total row
+  adorn_percentages(denominator = "col") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front")
+
+chisq.test(pretest$povrce_svaki_dan, pretest$pol)
+```
+
+### Povrće svakog dana u odnosu na region
+
+```{r echo=FALSE}
+
+pretest |> 
+  tabyl(okrug, povrce_svaki_dan) |> 
+  adorn_totals(where = "row") |> # add a total row
+  adorn_percentages(denominator = "row") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front") |> 
+  flextable::flextable() %>%    # convert to pretty image
+  flextable::autofit()  
+
+chisq.test(pretest$povrce_svaki_dan,pretest$okrug)
+
+```
+
+# Pitanje broj 5. Koliko puta jedu slatkiše? 
+
+### Koliko puta jedu slatkiše
+
+```{r echo=FALSE}
+pretest$slatkisi <- factor(pretest$na1_16_slatkisi_id,
+                              levels = c(
+                                '11601', 
+                                '11602',
+                                '11603',
+                                '11604',
+                                '11605'), 
+                              labels = c(
+                                'Svakog dana, \n dva ili više puta dnevno',
+                                'Svakog dana, \n jednom dnevno',
+                                'Nekoliko puta \n nedeljno',
+                                'Jednom nedeljno \n ili ređe',
+                                'Nikad'
+                              ))
+
+pretest |> 
+  tabyl(slatkisi) |> 
+  adorn_pct_formatting(digits = 0) |> 
+  adorn_totals(where = "row") 
+
+
+pretest <- pretest |> 
+  mutate(slatkisi_svaki_dan = case_when(
+    slatkisi == "Svakog dana, \n dva ili više puta dnevno" ~ "Svaki dan slatkiše",
+    slatkisi == "Svakog dana, \n jednom dnevno" ~ "Svaki dan slatkiše",
+    TRUE ~ 'Ne jedu slatkiše svakog dana'
+  ))
+
+```
+
+### Plot koliko često jednu slatkiše
+
+```{r echo=FALSE}
+ucestalost_slatkisa_racunanje <- pretest |> 
+  tibble(x = slatkisi) %>%
+  count(x)
+
+ucestalost_slatkisa_racunanje <- ucestalost_slatkisa_racunanje |> 
+  mutate(p = n / sum(n), # percentage
+         p = scales::label_percent(accuracy = 1)(p),
+        lab = paste(n, p, sep = "\n"))
+
+ggplot(ucestalost_slatkisa_racunanje, aes(x, n)) +
+  geom_col() +
+  geom_text(aes(label = if_else(n > 0, lab, "")), # only create label if n > 0 
+            vjust = -0.2, # "bottom align" to put on top of bar
+            nudge_y = 0) + # nudge to create distance
+  scale_y_continuous(limits = c(0,2400))+ # ensure label can be seen
+  theme_classic(base_family = "Calibri")+
+  xlab("Učestalost konzumiranja slatkiša") + ylab("Broj đaka i učestalost konzumiranja slatkiša tokom sedmice")
+
+
+```
+
+
+### Slatkiši svakog dana u odnosu na pol
+
+```{r echo=FALSE}
+pretest |> 
+  tabyl(slatkisi_svaki_dan, pol) |> 
+  adorn_totals(where = "row") %>%             # add a total row
+  adorn_percentages(denominator = "col") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front")
+
+chisq.test(pretest$slatkisi_svaki_dan, pretest$pol)
+```
+
+### Slatkiši svakog dana u odnosu na region
+
+```{r echo=FALSE}
+
+pretest |> 
+  tabyl(okrug, slatkisi_svaki_dan) |> 
+  adorn_totals(where = "row") |> # add a total row
+  adorn_percentages(denominator = "row") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front") |> 
+  flextable::flextable() %>%    # convert to pretty image
+  flextable::autofit()  
+
+chisq.test(pretest$slatkisi_svaki_dan,pretest$okrug)
+
+```
+
+# Pitanje broj 6. Koliko puta jedu mleko i mlecne prozivede? 
+
+### Koliko puta jedu slatkiše
+
+```{r echo=FALSE}
+pretest$mleko <- factor(pretest$na1_17_mleko_i_mlecni_proizvodi_id,
+                              levels = c(
+                                '11701', 
+                                '11702',
+                                '11703',
+                                '11704',
+                                '11705'), 
+                              labels = c(
+                                'Svakog dana, dva ili više puta dnevno',
+                                'Svakog dana, jednom dnevno',
+                                'Nekoliko puta nedeljno',
+                                'Jednom nedeljno ili ređe',
+                                'Nikad'
+                              ))
+
+pretest |> 
+  tabyl(mleko) |> 
+  adorn_pct_formatting(digits = 0) |> 
+  adorn_totals(where = "row") 
+
+
+pretest <- pretest |> 
+  mutate(mleko_svaki_dan = case_when(
+    mleko == "Svakog dana, dva ili više puta dnevno" ~ "Svaki dan mleko",
+    mleko == "Svakog dana, jednom dnevno" ~ "Svaki dan mleko",
+    TRUE ~ 'Ne jedu mleko svakog dana'
+  ))
+
+```
+
+### Mleko svakog dana u odnosu na pol
+
+```{r echo=FALSE}
+pretest |> 
+  tabyl(mleko_svaki_dan, pol) |> 
+  adorn_totals(where = "row") %>%             # add a total row
+  adorn_percentages(denominator = "col") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front")
+
+chisq.test(pretest$mleko_svaki_dan, pretest$pol)
+```
+
+### Mleko svakog dana u odnosu na region
+
+```{r echo=FALSE}
+
+pretest |> 
+  tabyl(okrug, mleko_svaki_dan) |> 
+  adorn_totals(where = "row") |> # add a total row
+  adorn_percentages(denominator = "row") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front") |> 
+  flextable::flextable() %>%    # convert to pretty image
+  flextable::autofit()  
+
+chisq.test(pretest$mleko_svaki_dan,pretest$okrug)
+
+```
+
+# Pitanje broj 7. Koliko puta konzumiraju slatke sokove? 
+
+### Koliko puta konzumiraju slatke sokove
+
+```{r echo=FALSE}
+pretest$sokovi <- factor(pretest$na1_18_sokovi_koji_nisu_cedjeni_id,
+                              levels = c(
+                                '11801', 
+                                '11802',
+                                '11803',
+                                '11804',
+                                '11805'), 
+                              labels = c(
+                                'Svakog dana, dva ili više puta dnevno',
+                                'Svakog dana, jednom dnevno',
+                                'Nekoliko puta nedeljno',
+                                'Jednom nedeljno ili ređe',
+                                'Nikad'
+                              ))
+
+pretest |> 
+  tabyl(sokovi) |> 
+  adorn_pct_formatting(digits = 0) |> 
+  adorn_totals(where = "row") 
+
+
+pretest <- pretest |> 
+  mutate(sokovi_svaki_dan = case_when(
+    sokovi == "Svakog dana, dva ili više puta dnevno" ~ "Svaki dan sokovi",
+    sokovi == "Svakog dana, jednom dnevno" ~ "Svaki dan sokovi",
+    TRUE ~ 'Ne piju sokove svakog dana'
+  ))
+
+```
+
+### Sokovi svakog dana u odnosu na pol
+
+```{r echo=FALSE}
+pretest |> 
+  tabyl(sokovi_svaki_dan, pol) |> 
+  adorn_totals(where = "row") %>%             # add a total row
+  adorn_percentages(denominator = "col") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front")
+
+chisq.test(pretest$sokovi_svaki_dan, pretest$pol)
+```
+
+### Sokovi svakog dana u odnosu na region
+
+```{r echo=FALSE}
+
+pretest |> 
+  tabyl(okrug, sokovi_svaki_dan) |> 
+  adorn_totals(where = "row") |> # add a total row
+  adorn_percentages(denominator = "row") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front") |> 
+  flextable::flextable() %>%    # convert to pretty image
+  flextable::autofit()  
+
+chisq.test(pretest$sokovi_svaki_dan,pretest$okrug)
+
+```
+
+# Pitanje broj 8. Da li jedu slane grickalice?
+
+### Koliko puta konzumiraju slatke sokove
+
+```{r echo=FALSE}
+pretest$grickalice <- factor(pretest$na1_19_slane_grickalice_id,
+                              levels = c(
+                                '11901', 
+                                '11902',
+                                '11903',
+                                '11904',
+                                '11905'), 
+                              labels = c(
+                                'Svakog dana, dva ili više puta dnevno',
+                                'Svakog dana, jednom dnevno',
+                                'Nekoliko puta nedeljno',
+                                'Jednom nedeljno ili ređe',
+                                'Nikad'
+                              ))
+
+pretest |> 
+  tabyl(grickalice) |> 
+  adorn_pct_formatting(digits = 0) |> 
+  adorn_totals(where = "row") 
+
+
+pretest <- pretest |> 
+  mutate(grickalice_svaki_dan = case_when(
+    grickalice == "Svakog dana, dva ili više puta dnevno" ~ "Svaki dan grickalice",
+    grickalice == "Svakog dana, jednom dnevno" ~ "Svaki dan grickalice",
+    TRUE ~ 'Ne jede grickalice svakog dana'
+  ))
+
+```
+
+### Grickalice svakog dana u odnosu na pol
+
+```{r echo=FALSE}
+pretest |> 
+  tabyl(grickalice_svaki_dan, pol) |> 
+  adorn_totals(where = "row") %>%             # add a total row
+  adorn_percentages(denominator = "col") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front")
+
+chisq.test(pretest$grickalice_svaki_dan, pretest$pol)
+```
+
+### Grickalice svakog dana u odnosu na region
+
+```{r echo=FALSE}
+
+pretest |> 
+  tabyl(okrug, grickalice_svaki_dan) |> 
+  adorn_totals(where = "row") |> # add a total row
+  adorn_percentages(denominator = "row") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front") |> 
+  flextable::flextable() %>%    # convert to pretty image
+  flextable::autofit()  
+
+chisq.test(pretest$grickalice_svaki_dan,pretest$okrug)
+
+```
+
+
+# Pitanje broj 9. Šta jedu tokom boravka u školi?
+
+### Šta jedu tokom boravka u školi
+
+```{r echo=FALSE}
+pretest$sta_jedu_skoli <- factor(pretest$na1_20_jedes_u_skoli_id,
+                              levels = c(
+                                '12001', 
+                                '12002',
+                                '12003',
+                                '12004',
+                                '12005',
+                                '12006'), 
+                              labels = c(
+                                'Hrane se u školskoj kuhinji',
+                                'Grickalice i slatkiše',
+                                'Sendviče ili pecivo koje donesu od kuće',
+                                'Sendviče ili pecivo koje kupe u blizini škole',
+                                'Nešto drugo',
+                                'Najčešće uopšte ne jedu tokom boravka u školi'
+                              ))
+
+pretest |> 
+  tabyl(sta_jedu_skoli) |> 
+  adorn_pct_formatting(digits = 0) |> 
+  adorn_totals(where = "row") 
+
+
+pretest <- pretest |> 
+  mutate(grickalice_slatkice_jedu_skoli = case_when(
+    sta_jedu_skoli == "Grickalice i slatkiše" ~ "Grickalice i slatkiše",
+    TRUE ~ 'Ne jede grickalice i slatkiše u skoli'
+  ))
+
+```
+
+### Grickalice i slatkiše u školi u odnosu na pol
+
+```{r echo=FALSE}
+pretest |> 
+  tabyl(grickalice_slatkice_jedu_skoli, pol) |> 
+  adorn_totals(where = "row") %>%             # add a total row
+  adorn_percentages(denominator = "col") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front")
+
+chisq.test(pretest$grickalice_slatkice_jedu_skoli, pretest$pol)
+```
+
+### Grickalice i slatkiše u školi u odnosu na region
+
+Hi-skver je moguce da ne radi, jer postoje ćelije sa jako malim brojevima.
+
+```{r echo=FALSE}
+
+pretest |> 
+  tabyl(okrug, grickalice_slatkice_jedu_skoli) |> 
+  adorn_totals(where = "row") |> # add a total row
+  adorn_percentages(denominator = "row") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front") |> 
+  flextable::flextable() %>%    # convert to pretty image
+  flextable::autofit()  
+
+chisq.test(pretest$grickalice_slatkice_jedu_skoli,pretest$okrug)
+```
+
+
+# Pitanje broj 10. Da li razislaju o izboru namirnica?
+
+### Da li pri izboru namirnica razmisljaju o svom zdravlju
+
+```{r echo=FALSE}
+pretest$razmislja_pri_izboru_namirnica <- factor(pretest$na1_21_izbor_nacina_ishrane_id,
+                              levels = c(
+                                '12101', 
+                                '12102',
+                                '12103',
+                                '12104'), 
+                              labels = c(
+                                'Nikad',
+                                'Ponekad',
+                                'Cesto',
+                                'Uvek'
+                              ))
+
+pretest |> 
+  tabyl(razmislja_pri_izboru_namirnica) |> 
+  adorn_pct_formatting(digits = 0) |> 
+  adorn_totals(where = "row") 
+
+
+pretest <- pretest |> 
+  mutate(nekad_razmislja_pri_izboru_namirnica = case_when(
+    razmislja_pri_izboru_namirnica == "Nikad" ~ "Nikad ne razmisljaju",
+    TRUE ~ 'Barem nekad razmisljaju o izboru namirnica'
+  ))
+
+```
+
+### Barem nekad razmisljaju o izboru namirnica u odnosu na pol
+
+```{r echo=FALSE}
+pretest |> 
+  tabyl(nekad_razmislja_pri_izboru_namirnica, pol) |> 
+  adorn_totals(where = "row") %>%             # add a total row
+  adorn_percentages(denominator = "col") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front")
+
+chisq.test(pretest$nekad_razmislja_pri_izboru_namirnica, pretest$pol)
+
+fisher.test(pretest$nekad_razmislja_pri_izboru_namirnica, pretest$pol)
+```
+
+### Barem nekad razmisljaju o izboru namirnica u odnosu na region
+Hi-skver je moguce da ne radi, jer postoje ćelije sa jako malim brojevima.
+
+```{r echo=FALSE}
+
+pretest |> 
+  tabyl(okrug, nekad_razmislja_pri_izboru_namirnica) |> 
+  adorn_totals(where = "row") |> # add a total row
+  adorn_percentages(denominator = "row") %>%  # convert to proportions
+  adorn_pct_formatting(digits = 0) %>%                  # convert to percents
+  adorn_ns(position = "front") |> 
+  flextable::flextable() %>%    # convert to pretty image
+  flextable::autofit()  
+
+chisq.test(pretest$nekad_razmislja_pri_izboru_namirnica,pretest$okrug)
+```
+
